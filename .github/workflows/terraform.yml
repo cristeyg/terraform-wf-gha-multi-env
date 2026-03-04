@@ -1,0 +1,64 @@
+name: Terraform Workspace Multi-Environment
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS Credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+
+      - name: Terraform Init
+        run: terraform init
+
+      # 🔥 Map Branch to Workspace
+      - name: Set Workspace Name
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "WORKSPACE=prod" >> $GITHUB_ENV
+          else
+            echo "WORKSPACE=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          fi
+
+      # 🔥 List Existing Workspaces
+      - name: List Workspaces
+        run: terraform workspace list
+
+      # 🔥 Create Workspace (If Not Exists)
+      - name: Create Workspace If Missing
+        run: |
+          if terraform workspace list | grep -q "$WORKSPACE"; then
+            echo "Workspace already exists"
+          else
+            terraform workspace new $WORKSPACE
+          fi
+
+      # 🔥 Select Workspace
+      - name: Select Workspace
+        run: terraform workspace select $WORKSPACE
+
+      - name: Show Current Workspace
+        run: terraform workspace show
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+      # Auto apply only for main (prod)
+      - name: Terraform Apply (Prod Only)
+        if: github.ref_name == 'main'
+        run: terraform apply -auto-approve tfplan
